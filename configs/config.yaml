@@ -1,0 +1,44 @@
+app:
+  name: "trend"
+  mode: "master" # master or worker
+
+logger:
+  level: "debug"
+  filename: "logs/trend.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 7
+  compress: true
+  console: true
+
+etcd:
+  endpoints:
+    - "10.10.10.20:2379"
+  dial_timeout: 5
+  username: "root"
+  password: "bighead67"
+
+mysql:
+  user: "root"
+  password: "password"
+  host: "127.0.0.1"
+  port: 3306
+  dbname: "trend_db"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 1
+  debug: true
+
+elasticsearch:
+  addresses:
+    - "http://127.0.0.1:9200"
+  username: ""
+  password: ""
+
+master:
+  cron_expr: "*/1 * * * *" # Every 1 minute for demo
+  task_path: "/trend/"
+
+worker:
+  concurrency: 10
+  task_path: "/trend/"
