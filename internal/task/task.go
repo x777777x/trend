@@ -10,6 +10,7 @@ type Task interface {
 	GetLastTime() time.Time
 	GetType() string
 	GetSlideInterval() uint
+	GetCalcInstanceID() uint64
 	Serialize() ([]byte, error)
 	Run() error
 }

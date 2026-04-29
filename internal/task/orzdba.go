@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"trend/internal/models"
 	"trend/pkg/algo"
 	"trend/pkg/logger"
 	"trend/pkg/storage"
@@ -16,13 +17,14 @@ import (
 
 // OrzdbaTask 具体实现了 orzdba 类型的任务
 type OrzdbaTask struct {
-	ID            string    `json:"id"`
-	ClusterName   string    `json:"cluster_name"`
-	Type          string    `json:"type"` // 例如：orzdba
-	CreatedAt     time.Time `json:"created_at"`
-	Host          string    `json:"instance_name"`
-	LastTime      time.Time `json:"last_time"`
-	SlideInterval uint      `json:"slide_interval"`
+	ID             string    `json:"id"`
+	ClusterName    string    `json:"cluster_name"`
+	Type           string    `json:"type"` // 例如：orzdba
+	CreatedAt      time.Time `json:"created_at"`
+	Host           string    `json:"instance_name"`
+	LastTime       time.Time `json:"last_time"`
+	SlideInterval  uint      `json:"slide_interval"`
+	CalcInstanceID uint64    `json:"calc_instance_id"`
 }
 
 func (t *OrzdbaTask) GetID() string {
@@ -49,6 +51,10 @@ func (t *OrzdbaTask) GetSlideInterval() uint {
 	return t.SlideInterval
 }
 
+func (t *OrzdbaTask) GetCalcInstanceID() uint64 {
+	return t.CalcInstanceID
+}
+
 // Serialize 提供 OrzdbaTask 的序列化方法
 func (t *OrzdbaTask) Serialize() ([]byte, error) {
 	return json.Marshal(t)
@@ -71,8 +77,8 @@ func (t *OrzdbaTask) Run() error {
 	}
 
 	// 2. 获取实际历史数据
-	startTime := endTime.Add(-time.Duration(t.SlideInterval) * time.Minute)
-	hitsList, err := t.fetchHistoryData(startTime, endTime)
+	windowStart := endTime.Add(-time.Duration(t.SlideInterval) * time.Minute)
+	hitsList, err := t.fetchHistoryData(windowStart, endTime)
 	if err != nil {
 		return err
 	}
@@ -83,7 +89,7 @@ func (t *OrzdbaTask) Run() error {
 	}
 
 	// 3. 历史数据分位值计算
-	t.calculateQuantiles(hitsList)
+	t.calculateQuantiles(hitsList, windowStart, endTime)
 
 	return nil
 }
@@ -93,6 +99,11 @@ func (t *OrzdbaTask) checkDataExists(endTime time.Time) (bool, error) {
 	es := storage.GetES()
 	if es == nil {
 		return false, fmt.Errorf("elasticsearch client not initialized")
+	}
+
+	tsMultiplier, err := storage.GetTimestampFormat()
+	if err != nil {
+		return false, err
 	}
 
 	existsQuery := map[string]interface{}{
@@ -107,8 +118,8 @@ func (t *OrzdbaTask) checkDataExists(endTime time.Time) (bool, error) {
 					map[string]interface{}{
 						"range": map[string]interface{}{
 							"timestamp": map[string]interface{}{
-								"gte": t.LastTime.Unix(),
-								"lte": endTime.Unix(),
+								"gte": t.LastTime.Unix() * tsMultiplier,
+								"lte": endTime.Unix() * tsMultiplier,
 							},
 						},
 					},
@@ -161,6 +172,11 @@ func (t *OrzdbaTask) fetchHistoryData(startTime, endTime time.Time) ([]interface
 		return nil, fmt.Errorf("elasticsearch client not initialized")
 	}
 
+	tsMultiplier, err := storage.GetTimestampFormat()
+	if err != nil {
+		return nil, err
+	}
+
 	dataQuery := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
@@ -173,8 +189,8 @@ func (t *OrzdbaTask) fetchHistoryData(startTime, endTime time.Time) ([]interface
 					map[string]interface{}{
 						"range": map[string]interface{}{
 							"timestamp": map[string]interface{}{
-								"gte": startTime.Unix(),
-								"lte": endTime.Unix(),
+								"gte": startTime.Unix() * tsMultiplier,
+								"lte": endTime.Unix() * tsMultiplier,
 							},
 						},
 					},
@@ -215,7 +231,7 @@ func (t *OrzdbaTask) fetchHistoryData(startTime, endTime time.Time) ([]interface
 }
 
 // calculateQuantiles 对给定的 ES hits 数据进行各维度指标的数据提取及分位值计算
-func (t *OrzdbaTask) calculateQuantiles(hitsList []interface{}) {
+func (t *OrzdbaTask) calculateQuantiles(hitsList []interface{}, windowStart, windowEnd time.Time) {
 	var dmls []float64
 	var cpuUsages []float64
 	var memUsages []float64
@@ -301,6 +317,26 @@ func (t *OrzdbaTask) calculateQuantiles(hitsList []interface{}) {
 			logger.Float64("p70", p70),
 			logger.Float64("p50", p50),
 			logger.Float64("p30", p30))
+
+		result := &models.TrendQuantileResult{
+			ClusterName: t.ClusterName,
+			TaskID:      t.ID,
+			Host:        t.Host,
+			MetricName:  name,
+			P99:         p99,
+			P95:         p95,
+			P90:         p90,
+			P70:         p70,
+			P50:         p50,
+			P30:         p30,
+			SampleCount: len(values),
+			WindowStart: windowStart,
+			WindowEnd:   windowEnd,
+		}
+		if err := storage.SaveQuantileResult(result, t.CalcInstanceID); err != nil {
+			logger.Error("Failed to save quantile result",
+				logger.String("metric", name), logger.Err(err))
+		}
 	}
 
 	calcAndLog("dml", dmls)
