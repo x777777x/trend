@@ -6,13 +6,14 @@ import (
 
 // TrendClusterTask 对应 trend_cluster_task 表
 type TrendClusterTask struct {
-	ID            uint64    `gorm:"primaryKey;autoIncrement;column:id;comment:主键ID，自增"`
-	ClusterName   string    `gorm:"type:varchar(64);not null;column:cluster_name;comment:集群名称"`
-	TaskName      string    `gorm:"type:varchar(64);not null;column:task_name;comment:任务类型名称"`
-	Status        int8      `gorm:"type:tinyint;not null;default:0;column:status;comment:任务状态：0-禁用，1-启用"`
-	SlideInterval uint      `gorm:"type:int unsigned;not null;default:0;column:slide_interval;comment:滑动间隔"`
-	CreateTime    time.Time `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP;column:create_time;comment:创建时间"`
-	UpdateTime    time.Time `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP;column:update_time;comment:修改时间"`
+	ID                    uint64    `gorm:"primaryKey;autoIncrement;column:id;comment:主键ID，自增"`
+	ClusterName           string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_cluster_task;column:cluster_name;comment:集群名称"`
+	TaskName              string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_cluster_task;column:task_name;comment:任务类型名称"`
+	Status                int8      `gorm:"type:tinyint;not null;default:0;column:status;comment:任务状态：0-禁用，1-启用"`
+	SlideInterval         uint      `gorm:"type:int unsigned;not null;default:0;column:slide_interval;comment:滑动间隔"`
+	StaleThresholdMinutes int       `gorm:"type:int;not null;default:30;column:stale_threshold_minutes;comment:超时阈值（分钟）"`
+	CreateTime            time.Time `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP;column:create_time;comment:创建时间"`
+	UpdateTime            time.Time `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP;column:update_time;comment:修改时间"`
 }
 
 // TableName 指定表名
