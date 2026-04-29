@@ -40,7 +40,7 @@ func NewScheduler(dispatcher *Dispatcher, election *LeaderElection) (*Scheduler,
 // Start 开始调度任务
 func (s *Scheduler) Start() error {
 	s.mutex.Lock()
-	defer s.mutex.Lock()
+	defer s.mutex.Unlock()
 	if s.isRunning {
 		return nil
 	}
@@ -113,7 +113,7 @@ func (s *Scheduler) executeTask() {
 			continue
 		}
 
-		if err := publisher.Initialize(); err != nil {
+		if err := publisher.Initialize(tc.SlideInterval); err != nil {
 			logger.Error("Failed to initialize task publisher", logger.String("task_name", tc.TaskName), logger.Err(err))
 			continue
 		}

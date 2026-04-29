@@ -10,44 +10,70 @@ import (
 	"trend/pkg/storage"
 )
 
-// GlobalConfig 全局配置结构体
-type GlobalConfig struct {
-	App    AppConfig           `mapstructure:"app"`
-	Logger logger.Config       `mapstructure:"logger"`
-	Etcd   etcd.Config         `mapstructure:"etcd"`
-	MySQL  storage.MySQLConfig `mapstructure:"mysql"`
-	ES     storage.ESConfig    `mapstructure:"elasticsearch"`
-	Master MasterConfig        `mapstructure:"master"`
-	Worker WorkerConfig        `mapstructure:"worker"`
+// Config 全局配置结构体
+type Config struct {
+	App    AppConfig    `mapstructure:"app"`
+	Etcd   etcd.Config  `mapstructure:"etcd"`
+	Logger logger.Config `mapstructure:"logger"`
+	Master MasterConfig `mapstructure:"master"`
+	Worker WorkerConfig `mapstructure:"worker"`
 }
 
 // AppConfig 应用基本配置
 type AppConfig struct {
-	Mode        string `mapstructure:"mode"` // master or worker
 	ClusterName string `mapstructure:"cluster_name"`
 }
 
-// MasterConfig Master节点特定配置
+// MasterConfig Master节点配置
 type MasterConfig struct {
-	CronExpr         string `mapstructure:"cron_expr"`         // 任务调度 Cron 表达式
-	TaskPath         string `mapstructure:"task_path"`         // Etcd 任务写入路径前缀
-	BacklogThreshold int    `mapstructure:"backlog_threshold"` // 调度器背压阈值
+	MySQL            storage.MySQLConfig `mapstructure:"mysql"`
+	APIAddr          string              `mapstructure:"api_addr"`           // HTTP API 监听地址
+	CronExpr         string              `mapstructure:"cron_expr"`
+	TaskPath         string              `mapstructure:"task_path"`
+	BacklogThreshold int                 `mapstructure:"backlog_threshold"`
 }
 
-// WorkerConfig Worker节点特定配置
+// WorkerConfig Worker节点配置
 type WorkerConfig struct {
-	Concurrency int    `mapstructure:"concurrency"` // 任务并发数 (Semaphore 大小)
-	TaskPath    string `mapstructure:"task_path"`   // 监听的 Etcd 任务路径前缀
+	MasterAPI   string `mapstructure:"master_api"`    // Master API 地址
+	Concurrency int    `mapstructure:"concurrency"`   // 任务并发数
+	MetricsAddr string `mapstructure:"metrics_addr"`  // Prometheus metrics HTTP 地址
 }
 
-var Conf *GlobalConfig
+// ClusterConfig Master API 返回给 Worker 的集群级配置
+type ClusterConfig struct {
+	Etcd        etcd.Config             `json:"etcd"`
+	TaskPath    string                  `json:"task_path"`
+	DataSources []DataSourceConfig      `json:"data_sources"`
+	Storages    []StorageConfig         `json:"storages"`
+}
+
+// DataSourceConfig 数据源配置（从 API 获取）
+type DataSourceConfig struct {
+	Name       string                 `json:"name"`
+	SourceType string                 `json:"source_type"`
+	Config     map[string]interface{} `json:"config"`
+}
+
+// StorageConfig 存储配置（从 API 获取）
+type StorageConfig struct {
+	Name       string                 `json:"name"`
+	SourceType string                 `json:"source_type"`
+	Config     map[string]interface{} `json:"config"`
+}
+
+var Conf *Config
+
+// Task type constants
+const (
+	TaskTypeOrzdba = "orzdba"
+)
 
 // InitConfig 初始化全局配置，从指定文件加载
 func InitConfig(cfgFile string) error {
 	v := viper.New()
 	v.SetConfigFile(cfgFile)
 	v.SetConfigType("yaml")
-	// 支持环境变量替换，前缀为 TREND_
 	v.AutomaticEnv()
 	v.SetEnvPrefix("TREND")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -56,7 +82,7 @@ func InitConfig(cfgFile string) error {
 		return err
 	}
 
-	Conf = new(GlobalConfig)
+	Conf = new(Config)
 	if err := v.Unmarshal(Conf); err != nil {
 		return err
 	}

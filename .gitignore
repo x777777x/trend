@@ -33,3 +33,6 @@ logs/
 *.log
 trend-master
 trend-worker
+
+# Local config (keep .example files tracked)
+configs/config.yaml

@@ -15,10 +15,10 @@ type Client struct {
 
 // Config 定义 etcd 配置
 type Config struct {
-	Endpoints   []string `yaml:"endpoints"`
-	DialTimeout int      `yaml:"dial_timeout"`
-	Username    string   `yaml:"username"`
-	Password    string   `yaml:"password"`
+	Endpoints   []string `mapstructure:"endpoints"`
+	DialTimeout int      `mapstructure:"dial_timeout"`
+	Username    string   `mapstructure:"username"`
+	Password    string   `mapstructure:"password"`
 }
 
 // NewClient 创建并返回一个新的 etcd Client 实例
