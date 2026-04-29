@@ -1,0 +1,39 @@
+app:
+  cluster_name: "prod-cluster-1"
+
+etcd:
+  endpoints:
+    - "http://127.0.0.1:2379"
+  dial_timeout: 5
+  username: ""
+  password: ""
+
+logger:
+  level: "info"
+  filename: "logs/trend.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 7
+  compress: true
+  console: true
+
+master:
+  mysql:
+    user: "root"
+    password: ""
+    host: "127.0.0.1"
+    port: 3306
+    dbname: "trend_config"
+    max_idle_conns: 10
+    max_open_conns: 100
+    conn_max_lifetime: 1
+    debug: false
+  api_addr: ":8080"
+  cron_expr: "*/1 * * * *"
+  task_path: "/trend/"
+  backlog_threshold: 100
+
+worker:
+  master_api: "http://127.0.0.1:8080"
+  concurrency: 10
+  metrics_addr: ":9090"
