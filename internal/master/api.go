@@ -124,6 +124,12 @@ func (a *APIServer) handleGetTrend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clusterName := r.URL.Query().Get("cluster_name")
+	if clusterName == "" {
+		http.Error(w, "cluster_name is required", http.StatusBadRequest)
+		return
+	}
+
 	metricName := r.URL.Query().Get("metric_name")
 	if metricName == "" {
 		http.Error(w, "metric_name is required", http.StatusBadRequest)
@@ -190,7 +196,7 @@ func (a *APIServer) handleGetTrend(w http.ResponseWriter, r *http.Request) {
 		windowEnd = t
 	}
 
-	series, err := storage.QueryTrendData(metricName, calcInstanceID, percentile, windowStart, windowEnd)
+	series, err := storage.QueryTrendData(clusterName, taskType, metricName, calcInstanceID, percentile, windowStart, windowEnd)
 	if err != nil {
 		logger.Error("Failed to query trend data",
 			logger.String("task_type", taskType),
