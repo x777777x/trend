@@ -75,6 +75,7 @@ func InitMasterMySQL(cfg *MySQLConfig) error {
 
 	if err := db.AutoMigrate(
 		&models.TrendClusterTask{},
+		&models.TrendClusterTaskVersion{},
 		&models.TrendOrzdbaCalcInstance{},
 		&models.TrendDataSource{},
 		&models.TrendStorageConfig{},

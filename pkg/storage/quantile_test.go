@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"testing"
 
 	"trend/internal/models"
@@ -26,19 +27,18 @@ func TestGetQuantileTableNameDeterministic(t *testing.T) {
 }
 
 func TestSaveQuantileResultNilDB(t *testing.T) {
-	// When WorkerDB is not initialized, SaveQuantileResult should return an error
+	metricsData := [][]float64{
+		{95.5, 90.0, 85.0, 70.0, 50.0, 30.0, 100},
+		{1000.5, 900.0, 800.0, 500.0, 300.0, 100.0, 5000},
+	}
+	dataBytes, _ := json.Marshal(metricsData)
+
 	result := &models.TrendQuantileResult{
 		ClusterName: "test-cluster",
 		TaskID:      "task-1",
 		Host:        "host-1",
-		MetricName:  "cpu_usage",
-		P99:         95.5,
-		P95:         90.0,
-		P90:         85.0,
-		P70:         70.0,
-		P50:         50.0,
-		P30:         30.0,
-		SampleCount: 100,
+		Version:     1,
+		MetricsData: string(dataBytes),
 	}
 
 	err := SaveQuantileResult(result, 1)
@@ -48,30 +48,37 @@ func TestSaveQuantileResultNilDB(t *testing.T) {
 }
 
 func TestQuantileResultModelFields(t *testing.T) {
+	metricsData := [][]float64{
+		{1000.5, 900.0, 800.0, 500.0, 300.0, 100.0, 5000},
+	}
+	dataBytes, _ := json.Marshal(metricsData)
+
 	result := models.TrendQuantileResult{
 		ClusterName: "cluster-a",
 		TaskID:      "task-001",
 		Host:        "192.168.1.10",
-		MetricName:  "dml",
-		P99:         1000.5,
-		P95:         900.0,
-		P90:         800.0,
-		P70:         500.0,
-		P50:         300.0,
-		P30:         100.0,
-		SampleCount: 5000,
+		Version:     2,
+		MetricsData: string(dataBytes),
 	}
 
 	if result.ClusterName != "cluster-a" {
 		t.Errorf("ClusterName mismatch")
 	}
-	if result.MetricName != "dml" {
-		t.Errorf("MetricName mismatch")
+	if result.Version != 2 {
+		t.Errorf("Version mismatch: got %d", result.Version)
 	}
-	if result.P99 != 1000.5 {
-		t.Errorf("P99 mismatch: got %f", result.P99)
+
+	var parsed [][]float64
+	if err := json.Unmarshal([]byte(result.MetricsData), &parsed); err != nil {
+		t.Fatalf("failed to parse MetricsData: %v", err)
 	}
-	if result.SampleCount != 5000 {
-		t.Errorf("SampleCount mismatch: got %d", result.SampleCount)
+	if len(parsed) != 1 || len(parsed[0]) != 7 {
+		t.Errorf("MetricsData shape unexpected: got %d metrics, %d values", len(parsed), len(parsed[0]))
+	}
+	if parsed[0][0] != 1000.5 {
+		t.Errorf("MetricsData p99 mismatch: got %f", parsed[0][0])
+	}
+	if parsed[0][6] != 5000 {
+		t.Errorf("MetricsData sample_count mismatch: got %f", parsed[0][6])
 	}
 }
