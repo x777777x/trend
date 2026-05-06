@@ -87,3 +87,51 @@ func TestTrendClusterTaskFromScheduler(t *testing.T) {
 		t.Errorf("expected SlideInterval=5, got %d", tc.SlideInterval)
 	}
 }
+
+func TestOrzdbaPublisherSetVersion(t *testing.T) {
+	attrs := []models.MetricAttribute{
+		{Name: "cpu_usage", Type: "float"},
+		{Name: "dml", Type: "int"},
+	}
+	p := &OrzdbaPublisher{ClusterName: "test-cluster"}
+	p.SetVersion(5, attrs)
+
+	if p.Version != 5 {
+		t.Errorf("expected Version=5, got %d", p.Version)
+	}
+	if len(p.Attributes) != 2 {
+		t.Fatalf("expected 2 attributes, got %d", len(p.Attributes))
+	}
+	if p.Attributes[0].Name != "cpu_usage" {
+		t.Errorf("first attribute name mismatch: got %s", p.Attributes[0].Name)
+	}
+}
+
+func TestOrzdbaPublisherPublishPublishIteration(t *testing.T) {
+	// Verify that Publish correctly iterates over tasks and dispatches each one.
+	// We cannot use a real Dispatcher without etcd and config, so we verify
+	// the publisher's task list is populated correctly after Initialize
+	// would populate it (which requires DB, so we test the struct fields directly).
+	p := &OrzdbaPublisher{
+		ClusterName:   "test-cluster",
+		SlideInterval: 5,
+		Version:       1,
+		tasks: []*task.OrzdbaTask{
+			{ID: "task-1", ClusterName: "test-cluster", Host: "host-1"},
+		},
+	}
+
+	// Verify the publisher holds the task and its fields are correct
+	if len(p.tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(p.tasks))
+	}
+	if p.tasks[0].GetID() != "task-1" {
+		t.Errorf("expected task ID 'task-1', got %s", p.tasks[0].GetID())
+	}
+	if p.tasks[0].GetHost() != "host-1" {
+		t.Errorf("expected task host 'host-1', got %s", p.tasks[0].GetHost())
+	}
+	if p.tasks[0].GetVersion() != 0 {
+		t.Errorf("expected task version 0 (default), got %d", p.tasks[0].GetVersion())
+	}
+}

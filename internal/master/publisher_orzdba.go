@@ -15,7 +15,15 @@ import (
 type OrzdbaPublisher struct {
 	ClusterName   string
 	SlideInterval uint
+	Version       uint
+	Attributes    []models.MetricAttribute
 	tasks         []*task.OrzdbaTask
+}
+
+// SetVersion 设置版本信息和指标属性
+func (p *OrzdbaPublisher) SetVersion(version uint, attrs []models.MetricAttribute) {
+	p.Version = version
+	p.Attributes = attrs
 }
 
 func (p *OrzdbaPublisher) Initialize(slideInterval uint) error {
@@ -36,14 +44,16 @@ func (p *OrzdbaPublisher) Initialize(slideInterval uint) error {
 	p.tasks = make([]*task.OrzdbaTask, 0, len(instances))
 	for _, inst := range instances {
 		p.tasks = append(p.tasks, &task.OrzdbaTask{
-			ID:            fmt.Sprintf("orzdba-task-%s-%s-%d", p.ClusterName, inst.InstanceName, time.Now().UnixNano()),
-			ClusterName:   p.ClusterName,
-			Host:          inst.InstanceName,
-			LastTime:      inst.LastTime,
-			SlideInterval: slideInterval,
-			Type:          "orzdba",
-			CreatedAt:     time.Now(),
+			ID:             fmt.Sprintf("orzdba-task-%s-%s-%d", p.ClusterName, inst.InstanceName, time.Now().UnixNano()),
+			ClusterName:    p.ClusterName,
+			Host:           inst.InstanceName,
+			LastTime:       inst.LastTime,
+			SlideInterval:  slideInterval,
+			Type:           "orzdba",
+			CreatedAt:      time.Now(),
 			CalcInstanceID: inst.ID,
+			Version:        p.Version,
+			Attributes:     p.Attributes,
 		})
 	}
 
@@ -55,7 +65,6 @@ func (p *OrzdbaPublisher) Publish(ctx context.Context, dispatcher *Dispatcher) e
 	for _, t := range p.tasks {
 		if err := dispatcher.Dispatch(ctx, t); err != nil {
 			logger.Error("OrzdbaPublisher failed to dispatch task", logger.String("task_id", t.ID), logger.Err(err))
-			// 可以选择 continue 或者直接 return err，这里选择 continue 尝试发送完
 		} else {
 			logger.Debug("OrzdbaPublisher successfully dispatched task", logger.String("task_id", t.ID))
 		}

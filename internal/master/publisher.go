@@ -3,12 +3,16 @@ package master
 import (
 	"context"
 	"fmt"
+
+	"trend/internal/models"
 )
 
 // TaskPublisher 定义了各类型任务在 Master 端的发布接口
 type TaskPublisher interface {
 	// Initialize 做一些初始化准备
 	Initialize(slideInterval uint) error
+	// SetVersion 设置版本信息和指标属性
+	SetVersion(version uint, attrs []models.MetricAttribute)
 	// Publish 将获取到的任务清单发布/分发下去
 	Publish(ctx context.Context, dispatcher *Dispatcher) error
 }

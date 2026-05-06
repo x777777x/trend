@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"trend/internal/models"
 )
 
 func TestExecutorSingleTask(t *testing.T) {
@@ -130,6 +132,8 @@ func (m *mockTask) GetHost() string               { return m.host }
 func (m *mockTask) GetLastTime() time.Time        { return m.lastTime }
 func (m *mockTask) GetType() string               { return "mock" }
 func (m *mockTask) GetSlideInterval() uint        { return m.slide }
-func (m *mockTask) GetCalcInstanceID() uint64       { return 0 }
-func (m *mockTask) Serialize() ([]byte, error)    { return nil, nil }
-func (m *mockTask) Run() error                    { return m.runFn() }
+func (m *mockTask) GetCalcInstanceID() uint64             { return 0 }
+func (m *mockTask) GetVersion() uint                      { return 0 }
+func (m *mockTask) GetAttributes() []models.MetricAttribute { return nil }
+func (m *mockTask) Serialize() ([]byte, error)            { return nil, nil }
+func (m *mockTask) Run() error                            { return m.runFn() }

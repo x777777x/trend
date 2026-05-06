@@ -107,11 +107,44 @@ func (s *Scheduler) executeTask() {
 	}
 
 	for _, tc := range tasksConfig {
+		// 检查该任务类型对应的实例配置表是否存在
+		tableName := fmt.Sprintf("trend_%s_calc_instance", tc.TaskName)
+		if !db.Migrator().HasTable(tableName) {
+			logger.Warn("Instance table not found, skipping task type",
+				logger.String("task_name", tc.TaskName),
+				logger.String("table", tableName))
+			continue
+		}
+
+		// 查询该任务类型的最新版本配置（取最大版本号）
+		var versionCfg models.TrendClusterTaskVersion
+		err := db.Where("cluster_name = ? AND task_name = ?", clusterName, tc.TaskName).
+			Order("version DESC").
+			First(&versionCfg).Error
+		if err != nil {
+			logger.Warn("No version config found for task type, skipping",
+				logger.String("task_name", tc.TaskName),
+				logger.String("cluster_name", clusterName))
+			continue
+		}
+
+		attrs, err := versionCfg.ParseAttributes()
+		if err != nil {
+			logger.Error("Failed to parse version attributes",
+				logger.String("task_name", tc.TaskName),
+				logger.String("version", fmt.Sprintf("%d", versionCfg.Version)),
+				logger.Err(err))
+			continue
+		}
+
 		publisher, err := NewTaskPublisher(tc.TaskName, clusterName)
 		if err != nil {
 			logger.Error("Failed to create task publisher", logger.String("task_name", tc.TaskName), logger.Err(err))
 			continue
 		}
+
+		// 注入版本信息到 publisher
+		publisher.SetVersion(versionCfg.Version, attrs)
 
 		if err := publisher.Initialize(tc.SlideInterval); err != nil {
 			logger.Error("Failed to initialize task publisher", logger.String("task_name", tc.TaskName), logger.Err(err))

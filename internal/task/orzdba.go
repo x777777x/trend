@@ -17,14 +17,16 @@ import (
 
 // OrzdbaTask 具体实现了 orzdba 类型的任务
 type OrzdbaTask struct {
-	ID             string    `json:"id"`
-	ClusterName    string    `json:"cluster_name"`
-	Type           string    `json:"type"` // 例如：orzdba
-	CreatedAt      time.Time `json:"created_at"`
-	Host           string    `json:"instance_name"`
-	LastTime       time.Time `json:"last_time"`
-	SlideInterval  uint      `json:"slide_interval"`
-	CalcInstanceID uint64    `json:"calc_instance_id"`
+	ID             string                   `json:"id"`
+	ClusterName    string                   `json:"cluster_name"`
+	Type           string                   `json:"type"` // 例如：orzdba
+	CreatedAt      time.Time                `json:"created_at"`
+	Host           string                   `json:"instance_name"`
+	LastTime       time.Time                `json:"last_time"`
+	SlideInterval  uint                     `json:"slide_interval"`
+	CalcInstanceID uint64                   `json:"calc_instance_id"`
+	Version        uint                     `json:"version"`
+	Attributes     []models.MetricAttribute `json:"attributes"`
 }
 
 func (t *OrzdbaTask) GetID() string {
@@ -53,6 +55,14 @@ func (t *OrzdbaTask) GetSlideInterval() uint {
 
 func (t *OrzdbaTask) GetCalcInstanceID() uint64 {
 	return t.CalcInstanceID
+}
+
+func (t *OrzdbaTask) GetVersion() uint {
+	return t.Version
+}
+
+func (t *OrzdbaTask) GetAttributes() []models.MetricAttribute {
+	return t.Attributes
 }
 
 // Serialize 提供 OrzdbaTask 的序列化方法
@@ -231,15 +241,18 @@ func (t *OrzdbaTask) fetchHistoryData(startTime, endTime time.Time) ([]interface
 }
 
 // calculateQuantiles 对给定的 ES hits 数据进行各维度指标的数据提取及分位值计算
+// 按 Version.Attributes 定义的属性列表动态解析
 func (t *OrzdbaTask) calculateQuantiles(hitsList []interface{}, windowStart, windowEnd time.Time) {
-	var dmls []float64
-	var cpuUsages []float64
-	var memUsages []float64
-	var diskReads []float64
-	var diskWrites []float64
-	var netIns []float64
-	var netOuts []float64
+	if len(t.Attributes) == 0 {
+		logger.Warn("No attributes defined for task, skipping quantile calculation",
+			logger.String("task_id", t.ID), logger.String("host", t.Host))
+		return
+	}
 
+	// 为每个属性准备一个数据切片
+	dataBuckets := make([][]float64, len(t.Attributes))
+
+	// 遍历所有 ES hits，按属性定义提取数据
 	for _, hit := range hitsList {
 		hitMap, ok := hit.(map[string]interface{})
 		if !ok {
@@ -250,55 +263,32 @@ func (t *OrzdbaTask) calculateQuantiles(hitsList []interface{}, windowStart, win
 			continue
 		}
 
-		// dml
-		if val, ok := sourceMap["dml"].(float64); ok {
-			dmls = append(dmls, val)
-		}
-		// cpu_usage
-		if val, ok := sourceMap["cpu_usage"].(float64); ok {
-			cpuUsages = append(cpuUsages, val)
-		}
-		// mem_usage
-		if val, ok := sourceMap["mem_usage"].(float64); ok {
-			memUsages = append(memUsages, val)
-		}
-		// diskRead
-		if valStr, ok := sourceMap["diskRead"].(string); ok {
-			if v, err := utils.ParseSizeToBytes(valStr); err == nil {
-				diskReads = append(diskReads, v)
+		for i, attr := range t.Attributes {
+			fieldName := attr.Name
+			switch attr.Type {
+			case "float":
+				if val, ok := sourceMap[fieldName].(float64); ok {
+					dataBuckets[i] = append(dataBuckets[i], val)
+				}
+			case "int":
+				if valStr, ok := sourceMap[fieldName].(string); ok {
+					if v, err := utils.ParseSizeToBytes(valStr); err == nil {
+						dataBuckets[i] = append(dataBuckets[i], v)
+					}
+				} else if val, ok := sourceMap[fieldName].(float64); ok {
+					dataBuckets[i] = append(dataBuckets[i], val)
+				}
 			}
-		} else if val, ok := sourceMap["diskRead"].(float64); ok {
-			diskReads = append(diskReads, val)
-		}
-		// diskWrite
-		if valStr, ok := sourceMap["diskWrite"].(string); ok {
-			if v, err := utils.ParseSizeToBytes(valStr); err == nil {
-				diskWrites = append(diskWrites, v)
-			}
-		} else if val, ok := sourceMap["diskWrite"].(float64); ok {
-			diskWrites = append(diskWrites, val)
-		}
-		// netIn
-		if valStr, ok := sourceMap["netIn"].(string); ok {
-			if v, err := utils.ParseSizeToBytes(valStr); err == nil {
-				netIns = append(netIns, v)
-			}
-		} else if val, ok := sourceMap["netIn"].(float64); ok {
-			netIns = append(netIns, val)
-		}
-		// netOut
-		if valStr, ok := sourceMap["netOut"].(string); ok {
-			if v, err := utils.ParseSizeToBytes(valStr); err == nil {
-				netOuts = append(netOuts, v)
-			}
-		} else if val, ok := sourceMap["netOut"].(float64); ok {
-			netOuts = append(netOuts, val)
 		}
 	}
 
-	calcAndLog := func(name string, values []float64) {
+	// 对每个有数据的属性计算分位值，组装 metrics_data
+	metricsData := make([][]float64, len(t.Attributes))
+	for i, values := range dataBuckets {
 		if len(values) == 0 {
-			return
+			// 没有数据的属性，填充零值
+			metricsData[i] = make([]float64, 7)
+			continue
 		}
 		sort.Float64s(values)
 		p99 := algo.Quantile(values, 0.99)
@@ -308,44 +298,38 @@ func (t *OrzdbaTask) calculateQuantiles(hitsList []interface{}, windowStart, win
 		p50 := algo.Quantile(values, 0.50)
 		p30 := algo.Quantile(values, 0.30)
 
-		logger.Info(fmt.Sprintf("[Orzdba Quantile] %s computed", name),
+		logger.Info("Quantile computed",
 			logger.String("task_id", t.ID),
 			logger.String("host", t.Host),
+			logger.String("metric", t.Attributes[i].Name),
 			logger.Float64("p99", p99),
 			logger.Float64("p95", p95),
-			logger.Float64("p90", p90),
-			logger.Float64("p70", p70),
 			logger.Float64("p50", p50),
 			logger.Float64("p30", p30))
 
-		result := &models.TrendQuantileResult{
-			ClusterName: t.ClusterName,
-			TaskID:      t.ID,
-			Host:        t.Host,
-			MetricName:  name,
-			P99:         p99,
-			P95:         p95,
-			P90:         p90,
-			P70:         p70,
-			P50:         p50,
-			P30:         p30,
-			SampleCount: len(values),
-			WindowStart: windowStart,
-			WindowEnd:   windowEnd,
-		}
-		if err := storage.SaveQuantileResult(result, t.CalcInstanceID); err != nil {
-			logger.Error("Failed to save quantile result",
-				logger.String("metric", name), logger.Err(err))
-		}
+		metricsData[i] = []float64{p99, p95, p90, p70, p50, p30, float64(len(values))}
 	}
 
-	calcAndLog("dml", dmls)
-	calcAndLog("cpu_usage", cpuUsages)
-	calcAndLog("mem_usage", memUsages)
-	calcAndLog("diskRead", diskReads)
-	calcAndLog("diskWrite", diskWrites)
-	calcAndLog("netIn", netIns)
-	calcAndLog("netOut", netOuts)
+	result := &models.TrendQuantileResult{
+		ClusterName: t.ClusterName,
+		TaskID:      t.ID,
+		Host:        t.Host,
+		Version:     t.Version,
+		WindowStart: windowStart,
+		WindowEnd:   windowEnd,
+	}
+
+	// 序列化 metrics_data 为 JSON
+	dataBytes, err := json.Marshal(metricsData)
+	if err != nil {
+		logger.Error("Failed to marshal metrics_data", logger.String("task_id", t.ID), logger.Err(err))
+		return
+	}
+	result.MetricsData = string(dataBytes)
+
+	if err := storage.SaveQuantileResult(result, t.CalcInstanceID); err != nil {
+		logger.Error("Failed to save quantile result", logger.String("task_id", t.ID), logger.Err(err))
+	}
 }
 
 // DeserializeOrzdbaTask 提供 OrzdbaTask 的反序列化方法
